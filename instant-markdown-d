@@ -8,17 +8,6 @@ var server = require('http').createServer(httpHandler),
     os = require('os'),
     send = require('send');
 
-// WARNING: By setting this environment variable, anyone on your network may
-// run arbitrary code in your browser and read arbitrary files in the working
-// directory of the open file!
-if (process.env.INSTANT_MARKDOWN_OPEN_TO_THE_WORLD) {
-  // Listen on any interface.
-  server.listen(8090, onListening).once('error', onServerError);
-} else {
-  // Listen locally.
-  server.listen(8090, '127.0.0.1', onListening).once('error', onServerError);
-}
-
 var md = new MarkdownIt({
   html: true,
   linkify: true,
@@ -35,9 +24,23 @@ var md = new MarkdownIt({
   }
 });
 
+
+var opts = {
+  markdown: md,
+
+  // WARNING: By setting this environment variable, anyone on your network may
+  // run arbitrary code in your browser and read arbitrary files in the working
+  // directory of the open file!
+  interface: process.env.INSTANT_MARKDOWN_OPEN_TO_THE_WORLD ? '0.0.0.0' : '127.0.0.1',
+  allow_unsafe_content: process.env.INSTANT_MARKDOWN_ALLOW_UNSAFE_CONTENT,
+  block_external: process.env.INSTANT_MARKDOWN_BLOCK_EXTERNAL,
+}
+
+server.listen(8090, opts.interface, onListening).once('error', onServerError);
+
 var lastWrittenMarkdown = '';
 function writeMarkdown(body) {
-  lastWrittenMarkdown = md.render(body);
+  lastWrittenMarkdown = opts.md.render(body);
   io.sockets.emit('newContent', lastWrittenMarkdown);
 }
 
@@ -62,7 +65,7 @@ function addSecurityHeaders(req, res, isIndexFile) {
   var HTTP_HOST = req.headers.host || 'localhost:8090';
   var CSP_SELF = 'http://' + HTTP_HOST;
 
-  if (!process.env.INSTANT_MARKDOWN_ALLOW_UNSAFE_CONTENT) {
+  if (!opts.allow_unsafe_content) {
     if (isIndexFile) {
       // index.html will drop the scripting capabilities upon load.
       csp.push('script-src ' + CSP_SELF + " 'unsafe-inline'");
@@ -71,7 +74,7 @@ function addSecurityHeaders(req, res, isIndexFile) {
       csp.push('script-src ');
     }
   }
-  if (process.env.INSTANT_MARKDOWN_BLOCK_EXTERNAL) {
+  if (opts.block_external) {
     csp.push('default-src data: ' + CSP_SELF);
     csp.push("style-src data: 'unsafe-inline' " + CSP_SELF);
     csp.push('connect-src ' + CSP_SELF + ' ws://' + HTTP_HOST);
